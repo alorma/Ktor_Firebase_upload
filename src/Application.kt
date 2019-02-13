@@ -5,10 +5,7 @@ import com.google.firebase.cloud.StorageClient
 import io.ktor.application.Application
 import io.ktor.application.call
 import io.ktor.application.install
-import io.ktor.auth.Authentication
-import io.ktor.auth.UserIdPrincipal
-import io.ktor.auth.authenticate
-import io.ktor.auth.basic
+import io.ktor.auth.*
 import io.ktor.features.CallLogging
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.PartData
@@ -51,7 +48,8 @@ fun Application.module(testing: Boolean = false) {
                 multipart.forEachPart { part ->
                     when (part) {
                         is PartData.FileItem -> {
-                            val id = uploadFile(part)
+                            val principal = call.principal<UserIdPrincipal>()!!
+                            val id = uploadFile(part, principal.name)
                             call.respond(HttpStatusCode.Created, "Image id: $id")
                         }
                         else -> {
@@ -65,9 +63,9 @@ fun Application.module(testing: Boolean = false) {
     }
 }
 
-fun uploadFile(part: PartData.FileItem): BlobId {
+fun uploadFile(part: PartData.FileItem, userName: String): BlobId {
     val file = File(part.originalFileName)
-    val fileName = "${file.nameWithoutExtension}_${System.currentTimeMillis()}.${file.extension}"
+    val fileName = "$userName/${file.nameWithoutExtension}_${System.currentTimeMillis()}.${file.extension}"
     return part.streamProvider().use { input ->
         val bucket = StorageClient.getInstance().bucket()
         val blob = bucket.create(fileName, input)
