@@ -5,3 +5,4 @@
 *.iml
 *.ipr
 *.iws
+resources/service_account.json

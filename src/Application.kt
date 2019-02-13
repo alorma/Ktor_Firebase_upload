@@ -1,5 +1,7 @@
 package com.example
 
+import com.google.cloud.storage.BlobId
+import com.google.firebase.cloud.StorageClient
 import io.ktor.application.Application
 import io.ktor.application.call
 import io.ktor.application.install
@@ -8,15 +10,13 @@ import io.ktor.auth.UserIdPrincipal
 import io.ktor.auth.authenticate
 import io.ktor.auth.basic
 import io.ktor.features.CallLogging
-import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.PartData
 import io.ktor.http.content.forEachPart
+import io.ktor.http.content.streamProvider
 import io.ktor.request.path
 import io.ktor.request.receiveMultipart
 import io.ktor.response.respond
-import io.ktor.response.respondText
-import io.ktor.routing.get
 import io.ktor.routing.post
 import io.ktor.routing.routing
 import org.slf4j.event.Level
@@ -32,6 +32,10 @@ fun Application.module(testing: Boolean = false) {
         filter { call -> call.request.path().startsWith("/") }
     }
 
+    install(FirebaseConfig) {
+        fileName = "resources/service_account.json"
+    }
+
     install(Authentication) {
         basic("myBasicAuth") {
             realm = "Ktor Server"
@@ -40,10 +44,6 @@ fun Application.module(testing: Boolean = false) {
     }
 
     routing {
-        get("/") {
-            call.respondText("HELLO WORLD!", contentType = ContentType.Text.Plain)
-        }
-
         authenticate("myBasicAuth") {
             post("/upload") {
                 val multipart = call.receiveMultipart()
@@ -51,7 +51,8 @@ fun Application.module(testing: Boolean = false) {
                 multipart.forEachPart { part ->
                     when (part) {
                         is PartData.FileItem -> {
-                            uploadFile(part)
+                            val id = uploadFile(part)
+                            call.respond(HttpStatusCode.Created, "Image id: $id")
                         }
                         else -> {
 
@@ -59,14 +60,17 @@ fun Application.module(testing: Boolean = false) {
                     }
                     part.dispose()
                 }
-                call.respond(HttpStatusCode.Created)
             }
         }
     }
 }
 
-fun uploadFile(part: PartData.FileItem) {
-    val name = File(part.originalFileName).nameWithoutExtension
-    val ext = File(part.originalFileName).extension
-    println("File name: $name.$ext")
+fun uploadFile(part: PartData.FileItem): BlobId {
+    val file = File(part.originalFileName)
+    val fileName = "${file.nameWithoutExtension}_${System.currentTimeMillis()}.${file.extension}"
+    return part.streamProvider().use { input ->
+        val bucket = StorageClient.getInstance().bucket()
+        val blob = bucket.create(fileName, input)
+        blob.blobId
+    }
 }
